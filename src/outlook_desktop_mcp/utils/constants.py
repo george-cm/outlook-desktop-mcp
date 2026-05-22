@@ -1,10 +1,10 @@
 """
 Outlook COM constants
 =====================
-Two distinct constant sets — do NOT mix them up:
+Two distinct constant sets - do NOT mix them up:
 
-olItemType — used with Outlook.CreateItem(n). OL_MAIL_ITEM=0, OL_APPOINTMENT_ITEM=1, OL_TASK_ITEM=3.
-olObjectClass — used to verify item.Class. OL_CLASS_MAIL=43, OL_CLASS_APPOINTMENT=26, OL_CLASS_TASK=48.
+olItemType - used with Outlook.CreateItem(n). OL_MAIL_ITEM=0, OL_APPOINTMENT_ITEM=1, OL_TASK_ITEM=3.
+olObjectClass - used to verify item.Class. OL_CLASS_MAIL=43, OL_CLASS_APPOINTMENT=26, OL_CLASS_TASK=48.
 
 CreateItem(0) creates a mail item (olItemType=0).
 item.Class == 43 checks that an existing item IS a mail item (olObjectClass=43).
@@ -19,7 +19,7 @@ OL_FOLDER_CALENDAR = 9
 OL_FOLDER_TASKS = 13
 OL_FOLDER_JUNK = 23
 OL_FOLDER_OUTBOX = 4
-OL_FOLDER_ARCHIVE = 28  # olFolderArchive — was missing, causing 'archive' default to DFS-search
+OL_FOLDER_ARCHIVE = 28  # olFolderArchive - was missing, causing 'archive' default to DFS-search
 
 FOLDER_NAME_TO_ENUM = {
     "inbox": OL_FOLDER_INBOX,
@@ -36,12 +36,12 @@ FOLDER_NAME_TO_ENUM = {
     "archive": OL_FOLDER_ARCHIVE,
 }
 
-# --- olItemType — used with Outlook.CreateItem() ---
+# --- olItemType - used with Outlook.CreateItem() ---
 OL_MAIL_ITEM = 0
 OL_APPOINTMENT_ITEM = 1
 OL_TASK_ITEM = 3
 
-# --- olObjectClass — used to verify item.Class ---
+# --- olObjectClass - used to verify item.Class ---
 OL_CLASS_MAIL = 43
 OL_CLASS_APPOINTMENT = 26
 OL_CLASS_TASK = 48

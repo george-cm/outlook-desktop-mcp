@@ -1,6 +1,6 @@
 """
 Unit tests for OutlookBridge lifecycle.
-No Outlook or COM installation required — _com_thread_main is patched.
+No Outlook or COM installation required - _com_thread_main is patched.
 """
 import asyncio
 import queue as _queue

@@ -5,7 +5,7 @@ Runs all Outlook COM calls on a dedicated STA (Single-Threaded Apartment)
 thread so the async MCP event loop never touches COM objects directly.
 
 Every COM function passed to bridge.call() receives (outlook, namespace, ...)
-as its first two arguments — the live COM objects that only exist on the
+as its first two arguments - the live COM objects that only exist on the
 COM thread.
 """
 import threading
@@ -30,7 +30,7 @@ class OutlookBridge:
         self._init_error: Exception | None = None
 
     def start(self) -> None:
-        """Start the COM thread. Idempotent — safe to call multiple times."""
+        """Start the COM thread. Idempotent - safe to call multiple times."""
         if self._thread is not None and self._thread.is_alive():
             return
         # Reset state so restart after stop() works correctly.
@@ -38,6 +38,13 @@ class OutlookBridge:
         self._ready.clear()
         self._alive.clear()
         self._init_error = None
+        # Drain any stale requests left over from the previous lifecycle.
+        # Without this, timed-out requests would re-execute on the new thread.
+        while True:
+            try:
+                self._request_queue.get_nowait()
+            except queue.Empty:
+                break
 
         self._thread = threading.Thread(
             target=self._com_thread_main, daemon=True, name="outlook-com"
@@ -117,11 +124,26 @@ class OutlookBridge:
         result_holder: dict = {}
         self._request_queue.put((func, args, kwargs, result_event, result_holder))
 
+        # Poll in short intervals so we detect COM thread death promptly
+        # rather than waiting the full 60s for a misleading TimeoutError.
         loop = asyncio.get_running_loop()
-        signaled = await loop.run_in_executor(
-            None, lambda: result_event.wait(timeout=60)
-        )
-        if not signaled:
+        deadline = 60.0
+        interval = 0.5
+        elapsed = 0.0
+        while elapsed < deadline:
+            signaled = await loop.run_in_executor(
+                None, lambda: result_event.wait(timeout=interval)
+            )
+            if signaled:
+                break
+            # Re-check bridge health after each poll interval.
+            if not self._alive.is_set() or not self._thread.is_alive():
+                raise RuntimeError(
+                    "COM bridge died while processing request. "
+                    "Restart the bridge to continue."
+                )
+            elapsed += interval
+        else:
             raise TimeoutError(
                 "Outlook COM operation timed out after 60 seconds. "
                 "Outlook may be waiting for user input (e.g., a dialog box)."

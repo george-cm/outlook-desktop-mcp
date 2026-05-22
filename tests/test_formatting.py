@@ -163,11 +163,11 @@ class TestFormatTaskSummary:
 
     def test_due_date_accessed_once(self):
         """DueDate must be cached - no double COM round-trip."""
+        from unittest.mock import PropertyMock
         item = _mock_task(due_year=2026)
-        # The property access counter on MagicMock tracks calls
+        due_mock = PropertyMock(return_value=_pyTime(datetime(2026, 6, 1)))
+        type(item).DueDate = due_mock
         format_task_summary(item)
-        # After the fix, DueDate is accessed via `d = item.DueDate` once.
-        # We can't easily count property accesses on MagicMock, but we verify
-        # the result is correct, which confirms the cached path was taken.
-        result = format_task_summary(item)
-        assert result["due_date"] is not None
+        assert due_mock.call_count == 1, (
+            f"DueDate accessed {due_mock.call_count} times - expected 1 (cached)"
+        )

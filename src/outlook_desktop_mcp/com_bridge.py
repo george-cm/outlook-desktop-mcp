@@ -11,7 +11,6 @@ COM thread.
 import threading
 import queue
 import asyncio
-import sys
 import logging
 
 logger = logging.getLogger("outlook_desktop_mcp.com_bridge")
@@ -27,10 +26,19 @@ class OutlookBridge:
         self._namespace = None
         self._ready = threading.Event()
         self._shutdown = threading.Event()
+        self._alive = threading.Event()
         self._init_error: Exception | None = None
 
-    def start(self):
-        """Start the COM thread. Call once at server startup."""
+    def start(self) -> None:
+        """Start the COM thread. Idempotent — safe to call multiple times."""
+        if self._thread is not None and self._thread.is_alive():
+            return
+        # Reset state so restart after stop() works correctly.
+        self._shutdown.clear()
+        self._ready.clear()
+        self._alive.clear()
+        self._init_error = None
+
         self._thread = threading.Thread(
             target=self._com_thread_main, daemon=True, name="outlook-com"
         )
@@ -42,13 +50,16 @@ class OutlookBridge:
                 "Outlook COM thread failed to initialize within 15s. "
                 "Is Outlook Desktop (Classic) running?"
             )
+        if self._init_error:
+            raise self._init_error
 
-    def _com_thread_main(self):
+    def _com_thread_main(self) -> None:
         """Main loop for the COM thread."""
         import pythoncom
         import win32com.client
 
-        pythoncom.CoInitialize()
+        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+        self._alive.set()
         try:
             self._outlook = win32com.client.Dispatch("Outlook.Application")
             self._namespace = self._outlook.GetNamespace("MAPI")
@@ -70,13 +81,15 @@ class OutlookBridge:
                     )
                 except Exception as e:
                     result_holder["error"] = e
+                    result_holder["tb"] = e.__traceback__
                 finally:
                     result_event.set()
         except Exception as e:
             self._init_error = e
-            self._ready.set()  # Unblock the caller so they see the error
+            self._ready.set()
             logger.error("COM thread init failed: %s", e)
         finally:
+            self._alive.clear()
             pythoncom.CoUninitialize()
 
     async def call(self, func, *args, **kwargs):
@@ -84,9 +97,24 @@ class OutlookBridge:
         Schedule a function to run on the COM thread and await its result.
 
         The function signature must be: func(outlook, namespace, *args, **kwargs)
+
+        Raises RuntimeError immediately if bridge is not running or has crashed,
+        rather than waiting for a 60-second timeout.
         """
+        if self._thread is None or not self._thread.is_alive():
+            raise RuntimeError(
+                "COM bridge is not running. Call start() first. "
+                "Is Outlook Desktop (Classic) running?"
+            )
+        if self._init_error:
+            raise self._init_error
+        if not self._alive.is_set():
+            raise RuntimeError(
+                "COM thread has exited unexpectedly. Restart the bridge."
+            )
+
         result_event = threading.Event()
-        result_holder = {}
+        result_holder: dict = {}
         self._request_queue.put((func, args, kwargs, result_event, result_holder))
 
         loop = asyncio.get_running_loop()
@@ -100,10 +128,10 @@ class OutlookBridge:
             )
 
         if "error" in result_holder:
-            raise result_holder["error"]
+            raise result_holder["error"].with_traceback(result_holder.get("tb"))
         return result_holder.get("value")
 
-    def stop(self):
+    def stop(self) -> None:
         """Signal the COM thread to shut down."""
         self._shutdown.set()
         if self._thread:

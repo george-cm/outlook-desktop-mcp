@@ -1,7 +1,7 @@
 """Helpers for extracting and formatting Outlook item data."""
 import re
 
-from outlook_desktop_mcp.tools._folder_constants import (
+from outlook_desktop_mcp.utils.constants import (
     BUSY_STATUS_NAMES,
     MEETING_STATUS_NAMES,
     RESPONSE_NAMES,
@@ -24,15 +24,16 @@ def strip_html(html: str) -> str:
 
 def format_email_summary(item) -> dict:
     """Extract key fields from an Outlook MailItem into a dict."""
+    att_count = item.Attachments.Count  # cache - avoids double COM round-trip
     return {
         "entry_id": item.EntryID,
         "subject": item.Subject or "(no subject)",
         "sender": getattr(item, "SenderEmailAddress", "unknown"),
         "sender_name": getattr(item, "SenderName", "unknown"),
-        "received_time": str(item.ReceivedTime),
+        "received_time": item.ReceivedTime.isoformat(),
         "unread": bool(item.UnRead),
-        "has_attachments": bool(item.Attachments.Count > 0),
-        "attachment_count": item.Attachments.Count,
+        "has_attachments": att_count > 0,
+        "attachment_count": att_count,
     }
 
 
@@ -53,8 +54,8 @@ def format_event_summary(item) -> dict:
     return {
         "entry_id": item.EntryID,
         "subject": item.Subject or "(no subject)",
-        "start": str(item.Start),
-        "end": str(item.End),
+        "start": item.Start.isoformat(),
+        "end": item.End.isoformat(),
         "duration": item.Duration,
         "location": item.Location or "",
         "organizer": item.Organizer or "",
@@ -85,13 +86,15 @@ def format_event_full(item, body_max_length: int = 5000) -> dict:
 
 def format_task_summary(item) -> dict:
     """Extract key fields from an Outlook TaskItem."""
+    due = item.DueDate    # cache - avoids double COM round-trip
+    start = item.StartDate
     return {
         "entry_id": item.EntryID,
         "subject": item.Subject or "(no subject)",
         "status": TASK_STATUS_NAMES.get(item.Status, "unknown"),
         "percent_complete": item.PercentComplete,
-        "due_date": str(item.DueDate) if str(item.DueDate) != "01/01/4501" else None,
-        "start_date": str(item.StartDate) if str(item.StartDate) != "01/01/4501" else None,
+        "due_date": None if due.year == 4501 else due.isoformat(),
+        "start_date": None if start.year == 4501 else start.isoformat(),
         "importance": IMPORTANCE_NAMES.get(item.Importance, "normal"),
         "complete": bool(item.Complete),
         "categories": item.Categories or "",
@@ -104,7 +107,8 @@ def format_task_full(item, body_max_length: int = 5000) -> dict:
     result = format_task_summary(item)
     result["body"] = truncate(item.Body or "", body_max_length)
     result["reminder_set"] = bool(item.ReminderSet)
+    completed = item.DateCompleted
     result["date_completed"] = (
-        str(item.DateCompleted) if item.Complete else None
+        completed.isoformat() if item.Complete else None
     )
     return result

@@ -122,6 +122,10 @@ class OutlookBridge:
 
         result_event = threading.Event()
         result_holder: dict = {}
+        # Snapshot the thread before enqueuing. A concurrent start() could
+        # swap self._thread after queue.put(); checking owning_thread ensures
+        # we detect death of the thread that actually owns this request.
+        owning_thread = self._thread
         self._request_queue.put((func, args, kwargs, result_event, result_holder))
 
         # Poll in short intervals so we detect COM thread death promptly
@@ -137,7 +141,7 @@ class OutlookBridge:
             if signaled:
                 break
             # Re-check bridge health after each poll interval.
-            if not self._alive.is_set() or not self._thread.is_alive():
+            if not self._alive.is_set() or not owning_thread.is_alive():
                 raise RuntimeError(
                     "COM bridge died while processing request. "
                     "Restart the bridge to continue."

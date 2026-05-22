@@ -1,5 +1,5 @@
 """
-Unit tests for utils/formatting — no Outlook or COM required.
+Unit tests for utils/formatting - no Outlook or COM required.
 COM objects are simulated with MagicMock.
 """
 from datetime import datetime
@@ -97,7 +97,7 @@ class TestFormatEmailSummary:
         assert result["attachment_count"] == 3
         assert result["has_attachments"] is True
         assert count_mock.call_count == 1, (
-            f"Attachments.Count accessed {count_mock.call_count} times — expected 1 (cached)"
+            f"Attachments.Count accessed {count_mock.call_count} times - expected 1 (cached)"
         )
 
     def test_no_attachments(self):
@@ -162,7 +162,7 @@ class TestFormatTaskSummary:
         )
 
     def test_due_date_accessed_once(self):
-        """DueDate must be cached — no double COM round-trip."""
+        """DueDate must be cached - no double COM round-trip."""
         item = _mock_task(due_year=2026)
         # The property access counter on MagicMock tracks calls
         format_task_summary(item)

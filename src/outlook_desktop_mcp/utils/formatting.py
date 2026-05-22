@@ -24,7 +24,7 @@ def strip_html(html: str) -> str:
 
 def format_email_summary(item) -> dict:
     """Extract key fields from an Outlook MailItem into a dict."""
-    att_count = item.Attachments.Count  # cache — avoids double COM round-trip
+    att_count = item.Attachments.Count  # cache - avoids double COM round-trip
     return {
         "entry_id": item.EntryID,
         "subject": item.Subject or "(no subject)",
@@ -86,7 +86,7 @@ def format_event_full(item, body_max_length: int = 5000) -> dict:
 
 def format_task_summary(item) -> dict:
     """Extract key fields from an Outlook TaskItem."""
-    due = item.DueDate    # cache — avoids double COM round-trip
+    due = item.DueDate    # cache - avoids double COM round-trip
     start = item.StartDate
     return {
         "entry_id": item.EntryID,

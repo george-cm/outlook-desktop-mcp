@@ -19,7 +19,7 @@ from datetime import datetime, timedelta
 
 import os
 
-from outlook_desktop_mcp.tools._folder_constants import (
+from outlook_desktop_mcp.utils.constants import (
     FOLDER_NAME_TO_ENUM,
     OL_MAIL_ITEM,
     OL_APPOINTMENT_ITEM,
@@ -36,6 +36,12 @@ from outlook_desktop_mcp.tools._folder_constants import (
     OL_TASK_COMPLETE,
     TASK_STATUS_NAMES,
     IMPORTANCE_NAMES,
+    OUTLOOK_DATE_FMT,
+    MAX_ITEM_COUNT,
+    SEND_USING_ACCOUNT_DISPID,
+    OL_CLASS_MAIL,
+    OL_CLASS_APPOINTMENT,
+    OL_CLASS_TASK,
 )
 from outlook_desktop_mcp.utils.formatting import (
     format_email_summary,
@@ -67,11 +73,6 @@ def _safe_dasl(query: str) -> str:
     query = query.replace("%", "[%]").replace("_", "[_]")
     return query.replace("'", "''").replace('"', '""')
 
-
-# Outlook item Class constants (olObjectClass — distinct from olItemType used in CreateItem)
-_OL_CLASS_MAIL = 43
-_OL_CLASS_APPOINTMENT = 26
-_OL_CLASS_TASK = 48
 
 
 def _check_item_class(item, expected_class: int, label: str) -> str | None:
@@ -284,7 +285,7 @@ async def send_email(
         # Set the sending account
         for acc in outlook.Session.Accounts:
             if acc.DeliveryStore.StoreID == store.StoreID:
-                mail._oleobj_.Invoke(*(64209, 0, 8, 0, acc))  # SendUsingAccount
+                mail._oleobj_.Invoke(*(SEND_USING_ACCOUNT_DISPID, 0, 8, 0, acc))  # SendUsingAccount
                 break
         mail.To = to
         mail.Subject = subject
@@ -473,7 +474,7 @@ async def mark_as_read(entry_id: str, account: str = "") -> str:
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_MAIL, "mail item"):
+        if err := _check_item_class(item, OL_CLASS_MAIL, "mail item"):
             return err
         subject = item.Subject
         item.UnRead = False
@@ -512,7 +513,7 @@ async def mark_as_unread(entry_id: str, account: str = "") -> str:
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_MAIL, "mail item"):
+        if err := _check_item_class(item, OL_CLASS_MAIL, "mail item"):
             return err
         subject = item.Subject
         item.UnRead = True
@@ -554,7 +555,7 @@ async def move_email(
     """
     def _move(outlook, namespace, entry_id, target_folder, account):
         item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_MAIL, "mail item"):
+        if err := _check_item_class(item, OL_CLASS_MAIL, "mail item"):
             return err
         subject = item.Subject
 
@@ -606,7 +607,7 @@ async def reply_email(
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_MAIL, "mail item"):
+        if err := _check_item_class(item, OL_CLASS_MAIL, "mail item"):
             return err
         subject = item.Subject
         reply_item = item.ReplyAll() if reply_all else item.Reply()
@@ -1022,7 +1023,7 @@ async def create_meeting(
             store = _require_store(namespace, account)
             for acc in outlook.Session.Accounts:
                 if acc.DeliveryStore.StoreID == store.StoreID:
-                    appt._oleobj_.Invoke(*(64209, 0, 8, 0, acc))
+                    appt._oleobj_.Invoke(*(SEND_USING_ACCOUNT_DISPID, 0, 8, 0, acc))
                     break
         appt.Subject = subject
         appt.Start = start
@@ -1101,7 +1102,7 @@ async def update_event(
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_APPOINTMENT, "appointment/meeting item"):
+        if err := _check_item_class(item, OL_CLASS_APPOINTMENT, "appointment/meeting item"):
             return err
         if subject:
             item.Subject = subject
@@ -1158,7 +1159,7 @@ async def delete_event(entry_id: str, account: str = "") -> str:
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_APPOINTMENT, "appointment/meeting item"):
+        if err := _check_item_class(item, OL_CLASS_APPOINTMENT, "appointment/meeting item"):
             return err
         subject = item.Subject
         meeting_status = item.MeetingStatus
@@ -1220,7 +1221,7 @@ async def respond_to_meeting(
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_APPOINTMENT, "appointment/meeting item"):
+        if err := _check_item_class(item, OL_CLASS_APPOINTMENT, "appointment/meeting item"):
             return err
         subject = item.Subject
         response_item = item.Respond(response_map[response_lower])
@@ -1458,7 +1459,7 @@ async def complete_task(entry_id: str, account: str = "") -> str:
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_TASK, "task item"):
+        if err := _check_item_class(item, OL_CLASS_TASK, "task item"):
             return err
         item.Status = OL_TASK_COMPLETE
         item.PercentComplete = 100
@@ -1489,7 +1490,7 @@ async def delete_task(entry_id: str, account: str = "") -> str:
             item = namespace.GetItemFromID(entry_id, store.StoreID)
         else:
             item = namespace.GetItemFromID(entry_id)
-        if err := _check_item_class(item, _OL_CLASS_TASK, "task item"):
+        if err := _check_item_class(item, OL_CLASS_TASK, "task item"):
             return err
         subject = item.Subject
         item.Delete()

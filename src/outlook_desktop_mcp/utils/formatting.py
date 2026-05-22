@@ -1,7 +1,7 @@
 """Helpers for extracting and formatting Outlook item data."""
 import re
 
-from outlook_desktop_mcp.tools._folder_constants import (
+from outlook_desktop_mcp.utils.constants import (
     BUSY_STATUS_NAMES,
     MEETING_STATUS_NAMES,
     RESPONSE_NAMES,

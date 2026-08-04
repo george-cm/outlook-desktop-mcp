@@ -1,12 +1,30 @@
 # Project Status — Resume Point
 
-**Last worked:** 2026-05-22
-**Branch:** `main` (clean, all work merged)
-**Tests:** 29 passing (`tests/test_constants.py`, `tests/test_com_bridge.py`, `tests/test_formatting.py`)
+**Last worked:** 2026-08-04
+**Branch:** `feat/draft-mode-and-reconnect` (worktree: `.worktrees/draft-mode`), not yet merged to `main`
+**Tests:** 51 passing (`tests/test_constants.py`, `tests/test_com_bridge.py`, `tests/test_formatting.py`, `tests/test_send_gating.py`)
 
 ---
 
 ## What is done
+
+### Phase 1.5 — Draft-safe mode + COM reconnect resilience (COMPLETE, unmerged)
+
+**Spec:** `docs/superpowers/specs/2026-08-04-draft-mode-and-reconnect-design.md`
+**Plan:** `docs/superpowers/plans/2026-08-04-draft-mode-and-reconnect.md`
+
+| Area | What changed |
+|---|---|
+| `com_bridge.py` | Connection to Outlook is now lazy (first queued call, not thread startup) - `start()` no longer fails if Outlook isn't running yet. Disconnect-class COM errors (`0x800706BA` RPC unavailable, etc.) trigger one reconnect + retry instead of permanently breaking the bridge after an Outlook restart. |
+| `server.py` | New `OUTLOOK_MCP_DRAFT_MODE` env flag (default off, upstream-compatible). When on, `send_email`/`reply_email`/`create_meeting` save a reviewable Drafts item / unsent meeting instead of transmitting, unless `confirm_send=true`. `respond_to_meeting` and meeting-cancel via `delete_event` deliberately left out of scope (no Outlook "draft" equivalent). |
+| `README.md` | New "Draft-Safe Mode" section. |
+
+Verified live against real Outlook (not just unit tests): draft lands in
+Drafts not Sent Items; lazy-connect bridge still does normal reads/sends
+correctly with `DRAFT_MODE` off.
+
+**Not yet done:** merge to `main`, macOS (`server_mac.py`) draft-mode parity
+(explicitly out of scope for this pass - see spec).
 
 ### Phase 1 — Bug fixes (COMPLETE)
 

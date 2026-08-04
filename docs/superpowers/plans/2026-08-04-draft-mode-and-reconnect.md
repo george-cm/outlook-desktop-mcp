@@ -621,10 +621,10 @@ def test_send_email_sends_when_draft_mode_on_and_confirm_send_true(fake_com, mon
 
 Run: `uv run --no-sync pytest tests/test_send_gating.py -v`
 
-Expected: `test_send_email_sends_immediately_when_draft_mode_off` currently
-`PASS`es by coincidence (today's code always sends). The other two `FAIL`:
-`AttributeError: <module 'outlook_desktop_mcp.server'> does not have the
-attribute 'DRAFT_MODE'`.
+Expected (verified empirically): all 3 `FAIL` with `AttributeError: <module
+'outlook_desktop_mcp.server'> does not have the attribute 'DRAFT_MODE'` - the
+`monkeypatch.setattr(server, "DRAFT_MODE", ...)` call itself fails since the
+attribute doesn't exist yet, before any assertion runs.
 
 - [ ] **Step 3: Write minimal implementation**
 

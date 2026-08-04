@@ -121,6 +121,12 @@ mcp = FastMCP(
 
 bridge = OutlookBridge()
 
+# Draft-safe mode: when enabled, send_email/reply_email/create_meeting create
+# a reviewable Outlook artifact (Drafts item / unsent meeting) instead of
+# transmitting immediately, unless the caller passes confirm_send=True.
+# Off by default so behavior is unchanged for existing consumers.
+DRAFT_MODE = os.getenv("OUTLOOK_MCP_DRAFT_MODE", "").strip().lower() in ("1", "true", "yes")
+
 
 # --- Helper: resolve store by account name ---
 
@@ -267,11 +273,18 @@ async def send_email(
     bcc: str = "",
     html_body: str = "",
     account: str = "",
+    confirm_send: bool = False,
 ) -> str:
     """Send an email using the user's Outlook account.
 
     Creates and sends an email immediately through the default Outlook profile.
     The email will appear in the user's Sent Items folder after sending.
+
+    When the server is running in draft-safe mode (OUTLOOK_MCP_DRAFT_MODE=1),
+    this creates a Drafts item instead of sending. Pass confirm_send=true
+    ONLY if the user has explicitly asked, in this turn, to send/dispatch
+    immediately rather than draft it. Ignored (has no effect) when the
+    server is not running in draft-safe mode.
 
     Args:
         to: One or more recipient email addresses, separated by semicolons.
@@ -285,11 +298,13 @@ async def send_email(
             the email as HTML. The plain-text body serves as fallback.
         account: Optional. Account display name (or substring) to send from.
             Default: primary account. Use list_accounts to see available accounts.
+        confirm_send: Optional. Only meaningful in draft-safe mode - set true
+            to actually send instead of drafting. Default false.
 
     Returns:
         A confirmation message with subject and recipients, or an error.
     """
-    def _send(outlook, namespace, to, subject, body, cc, bcc, html_body, account):
+    def _send(outlook, namespace, to, subject, body, cc, bcc, html_body, account, confirm_send):
         store = _require_store(namespace, account)
         mail = outlook.CreateItem(OL_MAIL_ITEM)
         # Set the sending account
@@ -306,11 +321,14 @@ async def send_email(
             mail.BCC = bcc
         if html_body:
             mail.HTMLBody = html_body
+        if DRAFT_MODE and not confirm_send:
+            mail.Save()
+            return f"Draft saved: '{subject}' to {to} (entry_id={mail.EntryID})"
         mail.Send()
         return f"Email sent: '{subject}' to {to}"
 
     try:
-        return await bridge.call(_send, to, subject, body, cc, bcc, html_body, account)
+        return await bridge.call(_send, to, subject, body, cc, bcc, html_body, account, confirm_send)
     except Exception as e:
         return f"Error sending email: {format_com_error(e)}"
 

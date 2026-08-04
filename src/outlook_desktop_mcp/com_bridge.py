@@ -138,6 +138,27 @@ class OutlookBridge:
         hr = e.args[0] & 0xFFFFFFFF
         return hr in self._DISCONNECT_HRESULTS
 
+    def _run_with_reconnect(self, func, args, kwargs):
+        """Run func(outlook, namespace, *args, **kwargs) on the COM thread.
+
+        Connects lazily if not yet connected. If the call fails with a
+        disconnect-class COM error (Outlook was restarted), reconnects once
+        and retries the same call. Any other error - including a failed
+        reconnect - propagates to the caller unchanged.
+        """
+        if self._outlook is None:
+            self._connect()
+        try:
+            return func(self._outlook, self._namespace, *args, **kwargs)
+        except Exception as e:
+            if not self._is_disconnect_error(e):
+                raise
+            logger.warning("Outlook COM connection lost, reconnecting: %s", e)
+            self._outlook = None
+            self._namespace = None
+            self._connect()
+            return func(self._outlook, self._namespace, *args, **kwargs)
+
     async def call(self, func, *args, **kwargs):
         """
         Schedule a function to run on the COM thread and await its result.

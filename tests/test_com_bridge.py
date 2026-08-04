@@ -179,3 +179,75 @@ def test_is_disconnect_error_false_for_unrelated_com_error():
 def test_is_disconnect_error_false_for_non_com_error():
     b = OutlookBridge()
     assert b._is_disconnect_error(ValueError("x")) is False
+
+
+# ---- _run_with_reconnect() ----
+
+def test_run_with_reconnect_connects_lazily_on_first_call():
+    b = OutlookBridge()
+    fake_outlook = MagicMock()
+    fake_outlook.GetNamespace.return_value = MagicMock()
+    with patch("win32com.client.Dispatch", return_value=fake_outlook) as mock_dispatch:
+        result = b._run_with_reconnect(lambda o, n: "ok", (), {})
+    assert result == "ok"
+    mock_dispatch.assert_called_once()
+
+
+def test_run_with_reconnect_reuses_existing_connection():
+    b = OutlookBridge()
+    b._outlook, b._namespace = MagicMock(), MagicMock()
+    with patch("win32com.client.Dispatch") as mock_dispatch:
+        result = b._run_with_reconnect(lambda o, n: "ok", (), {})
+    assert result == "ok"
+    mock_dispatch.assert_not_called()
+
+
+def test_run_with_reconnect_reconnects_and_retries_on_disconnect_error():
+    b = OutlookBridge()
+    b._outlook, b._namespace = MagicMock(), MagicMock()  # already "connected"
+    disconnect_error = pythoncom.com_error(-2147023174, "RPC server is unavailable.", None, None)
+    calls = {"n": 0}
+
+    def flaky(outlook, namespace):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise disconnect_error
+        return "recovered"
+
+    fresh_outlook = MagicMock()
+    fresh_outlook.GetNamespace.return_value = MagicMock()
+    with patch("win32com.client.Dispatch", return_value=fresh_outlook) as mock_dispatch:
+        result = b._run_with_reconnect(flaky, (), {})
+    assert result == "recovered"
+    assert calls["n"] == 2
+    mock_dispatch.assert_called_once()
+    assert b._outlook is fresh_outlook
+
+
+def test_run_with_reconnect_surfaces_error_when_reconnect_fails():
+    b = OutlookBridge()
+    b._outlook, b._namespace = MagicMock(), MagicMock()
+    disconnect_error = pythoncom.com_error(-2147023174, "RPC server is unavailable.", None, None)
+
+    def always_disconnected(outlook, namespace):
+        raise disconnect_error
+
+    with patch("win32com.client.Dispatch", side_effect=RuntimeError("Outlook still down")):
+        with pytest.raises(RuntimeError, match="Outlook Desktop is not running"):
+            b._run_with_reconnect(always_disconnected, (), {})
+    assert b._outlook is None
+
+
+def test_run_with_reconnect_does_not_reconnect_on_non_disconnect_error():
+    b = OutlookBridge()
+    b._outlook, b._namespace = MagicMock(), MagicMock()
+    original_outlook = b._outlook
+
+    def raise_value_error(outlook, namespace):
+        raise ValueError("bad entry_id")
+
+    with patch("win32com.client.Dispatch") as mock_dispatch:
+        with pytest.raises(ValueError, match="bad entry_id"):
+            b._run_with_reconnect(raise_value_error, (), {})
+    mock_dispatch.assert_not_called()
+    assert b._outlook is original_outlook

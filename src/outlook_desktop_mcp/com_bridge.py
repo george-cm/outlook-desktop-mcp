@@ -99,6 +99,27 @@ class OutlookBridge:
             self._alive.clear()
             pythoncom.CoUninitialize()
 
+    def _connect(self) -> None:
+        """(Re)connect to a running Outlook instance. Must run on the COM thread.
+
+        Raises RuntimeError with an actionable message if Outlook isn't
+        running or the connection otherwise fails - never leaves a half-set
+        _outlook/_namespace pair behind.
+        """
+        import win32com.client
+
+        try:
+            outlook = win32com.client.Dispatch("Outlook.Application")
+            namespace = outlook.GetNamespace("MAPI")
+        except Exception as e:
+            self._outlook = None
+            self._namespace = None
+            raise RuntimeError(
+                "Outlook Desktop is not running. Open it and retry."
+            ) from e
+        self._outlook = outlook
+        self._namespace = namespace
+
     async def call(self, func, *args, **kwargs):
         """
         Schedule a function to run on the COM thread and await its result.

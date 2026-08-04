@@ -6,6 +6,7 @@ import asyncio
 import queue as _queue
 import threading
 import pytest
+import pythoncom
 from unittest.mock import MagicMock, patch
 
 from outlook_desktop_mcp.com_bridge import OutlookBridge
@@ -136,3 +137,26 @@ def test_call_passes_positional_args(bridge):
 def test_call_passes_kwargs(bridge):
     result = asyncio.run(bridge.call(lambda o, n, msg="": msg, msg="hello"))
     assert result == "hello"
+
+
+# ---- _connect() ----
+
+def test_connect_dispatches_outlook_and_namespace():
+    b = OutlookBridge()
+    fake_outlook = MagicMock()
+    fake_namespace = MagicMock()
+    fake_outlook.GetNamespace.return_value = fake_namespace
+    with patch("win32com.client.Dispatch", return_value=fake_outlook) as mock_dispatch:
+        b._connect()
+    mock_dispatch.assert_called_once_with("Outlook.Application")
+    assert b._outlook is fake_outlook
+    assert b._namespace is fake_namespace
+
+
+def test_connect_raises_clear_error_when_outlook_not_running():
+    b = OutlookBridge()
+    with patch("win32com.client.Dispatch", side_effect=RuntimeError("boom")):
+        with pytest.raises(RuntimeError, match="Outlook Desktop is not running"):
+            b._connect()
+    assert b._outlook is None
+    assert b._namespace is None

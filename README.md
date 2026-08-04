@@ -167,6 +167,31 @@ These tools rely on COM-specific APIs (MAPI property accessors, the Rules object
 
 **Total: 29 tools on Windows, 22 tools on macOS.**
 
+## Draft-Safe Mode
+
+By default `send_email`, `reply_email`, and `create_meeting` transmit
+immediately, same as always. Set `OUTLOOK_MCP_DRAFT_MODE=1` in the server's
+environment to flip that default: the three tools create a reviewable
+Outlook artifact instead (a Drafts item for email, an unsent meeting on the
+calendar) and never transmit unless the caller explicitly passes
+`confirm_send=true`.
+
+| Tool | Draft-safe mode behavior |
+|---|---|
+| `send_email` | Saves to Drafts instead of sending |
+| `reply_email` | Saves a threaded reply draft (via Outlook's own `Reply()`/`ReplyAll()`) instead of sending |
+| `create_meeting` | Saves the meeting to your calendar without sending invitations - open it in Outlook and click Send when ready |
+
+`respond_to_meeting` and cancelling an organized meeting via `delete_event`
+are unaffected - both still act immediately regardless of this setting
+(Outlook has no equivalent "draft" artifact for either).
+
+Enable it when registering the server, e.g.:
+
+```bash
+claude mcp add outlook-desktop --env OUTLOOK_MCP_DRAFT_MODE=1 -- outlook-desktop-mcp
+```
+
 ## Architecture Details
 
 ### Windows: COM Bridge (`com_bridge.py`)

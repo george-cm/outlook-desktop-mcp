@@ -160,3 +160,22 @@ def test_connect_raises_clear_error_when_outlook_not_running():
             b._connect()
     assert b._outlook is None
     assert b._namespace is None
+
+
+# ---- _is_disconnect_error() ----
+
+def test_is_disconnect_error_true_for_rpc_unavailable():
+    b = OutlookBridge()
+    e = pythoncom.com_error(-2147023174, "RPC server is unavailable.", None, None)  # 0x800706BA
+    assert b._is_disconnect_error(e) is True
+
+
+def test_is_disconnect_error_false_for_unrelated_com_error():
+    b = OutlookBridge()
+    e = pythoncom.com_error(-2147467259, "Unspecified error.", None, None)  # 0x80004005 E_FAIL
+    assert b._is_disconnect_error(e) is False
+
+
+def test_is_disconnect_error_false_for_non_com_error():
+    b = OutlookBridge()
+    assert b._is_disconnect_error(ValueError("x")) is False

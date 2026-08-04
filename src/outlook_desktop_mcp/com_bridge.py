@@ -120,6 +120,24 @@ class OutlookBridge:
         self._outlook = outlook
         self._namespace = namespace
 
+    # HRESULTs indicating the COM connection itself is dead (Outlook was
+    # closed/restarted), as opposed to an ordinary operation error.
+    _DISCONNECT_HRESULTS = {
+        0x800706BA,  # RPC server unavailable
+        0x800706BE,  # RPC call failed
+        0x80010108,  # RPC_E_DISCONNECTED
+        0x800401FD,  # CO_E_OBJNOTCONNECTED
+    }
+
+    def _is_disconnect_error(self, e: Exception) -> bool:
+        """True if e is a COM error indicating the Outlook connection died."""
+        import pythoncom
+
+        if not isinstance(e, pythoncom.com_error):
+            return False
+        hr = e.args[0] & 0xFFFFFFFF
+        return hr in self._DISCONNECT_HRESULTS
+
     async def call(self, func, *args, **kwargs):
         """
         Schedule a function to run on the COM thread and await its result.

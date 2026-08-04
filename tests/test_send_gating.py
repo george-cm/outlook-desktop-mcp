@@ -56,3 +56,43 @@ def test_send_email_sends_when_draft_mode_on_and_confirm_send_true(fake_com, mon
     mail = fake_outlook.CreateItem.return_value
     mail.Send.assert_called_once()
     mail.Save.assert_not_called()
+
+
+# ---- reply_email ----
+
+def test_reply_email_sends_immediately_when_draft_mode_off(fake_com, monkeypatch):
+    monkeypatch.setattr(server, "DRAFT_MODE", False)
+    fake_outlook, fake_namespace = fake_com
+    source = fake_namespace.GetItemFromID.return_value
+    source.Class = OL_CLASS_MAIL
+    source.Reply.return_value.Body = "original quoted body"
+    asyncio.run(server.reply_email(entry_id="AAA", body="my note"))
+    reply = source.Reply.return_value
+    reply.Send.assert_called_once()
+    reply.Save.assert_not_called()
+    assert reply.Body == "my note\n\noriginal quoted body"
+
+
+def test_reply_email_drafts_via_reply_never_createitem(fake_com, monkeypatch):
+    monkeypatch.setattr(server, "DRAFT_MODE", True)
+    fake_outlook, fake_namespace = fake_com
+    source = fake_namespace.GetItemFromID.return_value
+    source.Class = OL_CLASS_MAIL
+    source.Reply.return_value.Body = "original quoted body"
+    result = asyncio.run(server.reply_email(entry_id="AAA", body="my note"))
+    reply = source.Reply.return_value
+    reply.Save.assert_called_once()
+    reply.Send.assert_not_called()
+    fake_outlook.CreateItem.assert_not_called()
+    assert "Reply draft saved" in result
+
+
+def test_reply_email_reply_all_uses_replyall(fake_com, monkeypatch):
+    monkeypatch.setattr(server, "DRAFT_MODE", True)
+    fake_outlook, fake_namespace = fake_com
+    source = fake_namespace.GetItemFromID.return_value
+    source.Class = OL_CLASS_MAIL
+    source.ReplyAll.return_value.Body = "original quoted body"
+    asyncio.run(server.reply_email(entry_id="AAA", body="note", reply_all=True))
+    source.ReplyAll.assert_called_once()
+    source.ReplyAll.return_value.Save.assert_called_once()

@@ -603,11 +603,20 @@ async def reply_email(
     body: str,
     reply_all: bool = False,
     account: str = "",
+    confirm_send: bool = False,
 ) -> str:
     """Reply to an email in Outlook.
 
-    Creates and sends a reply, preserving the original message thread.
-    Use reply_all=True to reply to all recipients (sender + CC list).
+    Creates a reply, preserving the original message thread. Use
+    reply_all=True to reply to all recipients (sender + CC list).
+
+    When the server is running in draft-safe mode (OUTLOOK_MCP_DRAFT_MODE=1),
+    this creates a threaded Drafts item instead of sending - it is always
+    built via Outlook's own Reply()/ReplyAll() on the source message, so it
+    is guaranteed to land in the same conversation thread. Pass
+    confirm_send=true ONLY if the user has explicitly asked, in this turn,
+    to send/dispatch immediately rather than draft it. Ignored (has no
+    effect) when the server is not running in draft-safe mode.
 
     Args:
         entry_id: The unique Outlook EntryID of the email to reply to.
@@ -617,22 +626,30 @@ async def reply_email(
             If false (default), reply only to the sender.
         account: Optional. Account display name (or substring). Only needed
             if entry_id is ambiguous across stores.
+        confirm_send: Optional. Only meaningful in draft-safe mode - set true
+            to actually send instead of drafting. Default false.
 
     Returns:
-        Confirmation indicating the reply was sent, or an error.
+        Confirmation indicating the reply was sent or drafted, or an error.
     """
-    def _reply(outlook, namespace, entry_id, body, reply_all, account):
+    def _reply(outlook, namespace, entry_id, body, reply_all, account, confirm_send):
         item = _get_item(namespace, entry_id, account)
         if err := _check_item_class(item, OL_CLASS_MAIL, "mail item"):
             return err
         subject = item.Subject
         reply_item = item.ReplyAll() if reply_all else item.Reply()
         reply_item.Body = body + "\n\n" + reply_item.Body
+        if DRAFT_MODE and not confirm_send:
+            reply_item.Save()
+            return (
+                f"Reply draft saved for '{subject}' (reply_all={reply_all}, "
+                f"entry_id={reply_item.EntryID})"
+            )
         reply_item.Send()
         return f"Reply sent to '{subject}' (reply_all={reply_all})"
 
     try:
-        return await bridge.call(_reply, entry_id, body, reply_all, account)
+        return await bridge.call(_reply, entry_id, body, reply_all, account, confirm_send)
     except Exception as e:
         return f"Error replying to email: {format_com_error(e)}"
 

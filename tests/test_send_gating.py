@@ -96,3 +96,43 @@ def test_reply_email_reply_all_uses_replyall(fake_com, monkeypatch):
     asyncio.run(server.reply_email(entry_id="AAA", body="note", reply_all=True))
     source.ReplyAll.assert_called_once()
     source.ReplyAll.return_value.Save.assert_called_once()
+
+
+# ---- create_meeting ----
+
+def test_create_meeting_sends_invites_when_draft_mode_off(fake_com, monkeypatch):
+    monkeypatch.setattr(server, "DRAFT_MODE", False)
+    fake_outlook, _ = fake_com
+    asyncio.run(server.create_meeting(
+        subject="Sync", start="2026-08-05 09:00", end="2026-08-05 09:30",
+        required_attendees="bob@example.com",
+    ))
+    appt = fake_outlook.CreateItem.return_value
+    appt.Send.assert_called_once()
+    appt.Save.assert_not_called()
+
+
+def test_create_meeting_saves_unsent_when_draft_mode_on(fake_com, monkeypatch):
+    monkeypatch.setattr(server, "DRAFT_MODE", True)
+    fake_outlook, _ = fake_com
+    result = asyncio.run(server.create_meeting(
+        subject="Sync", start="2026-08-05 09:00", end="2026-08-05 09:30",
+        required_attendees="bob@example.com",
+    ))
+    appt = fake_outlook.CreateItem.return_value
+    appt.Recipients.ResolveAll.assert_called_once()
+    appt.Save.assert_called_once()
+    appt.Send.assert_not_called()
+    assert "NOT sent" in result
+
+
+def test_create_meeting_sends_when_draft_mode_on_and_confirm_send_true(fake_com, monkeypatch):
+    monkeypatch.setattr(server, "DRAFT_MODE", True)
+    fake_outlook, _ = fake_com
+    asyncio.run(server.create_meeting(
+        subject="Sync", start="2026-08-05 09:00", end="2026-08-05 09:30",
+        required_attendees="bob@example.com", confirm_send=True,
+    ))
+    appt = fake_outlook.CreateItem.return_value
+    appt.Send.assert_called_once()
+    appt.Save.assert_not_called()

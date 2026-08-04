@@ -1020,13 +1020,22 @@ async def create_meeting(
     body: str = "",
     optional_attendees: str = "",
     account: str = "",
+    confirm_send: bool = False,
 ) -> str:
     """Create a meeting and send invitations to attendees.
 
-    Creates a calendar meeting and immediately sends meeting requests to
-    all specified attendees. The meeting will appear on the organizer's
-    calendar and attendees will receive an invitation they can accept,
-    decline, or tentatively accept.
+    Creates a calendar meeting and sends meeting requests to all specified
+    attendees. The meeting will appear on the organizer's calendar and
+    attendees will receive an invitation they can accept, decline, or
+    tentatively accept.
+
+    When the server is running in draft-safe mode (OUTLOOK_MCP_DRAFT_MODE=1),
+    this saves the meeting to the organizer's calendar WITHOUT sending
+    invitations - it sits there unsent until opened in Outlook and sent
+    manually. Pass confirm_send=true ONLY if the user has explicitly asked,
+    in this turn, to send invitations immediately rather than draft the
+    meeting. Ignored (has no effect) when the server is not running in
+    draft-safe mode.
 
     Args:
         subject: The meeting title.
@@ -1040,12 +1049,15 @@ async def create_meeting(
             by semicolons.
         account: Optional. Account display name (or substring) to send from.
             Default: primary account. Use list_accounts to see available accounts.
+        confirm_send: Optional. Only meaningful in draft-safe mode - set true
+            to actually send invitations instead of drafting. Default false.
 
     Returns:
-        Confirmation that the meeting was created and invitations sent.
+        Confirmation that the meeting was created and invitations sent (or
+        saved unsent in draft-safe mode).
     """
     def _create(outlook, namespace, subject, start, end, required_attendees,
-                location, body, optional_attendees, account):
+                location, body, optional_attendees, account, confirm_send):
         appt = outlook.CreateItem(OL_APPOINTMENT_ITEM)
         # Set sending account
         if account:
@@ -1077,6 +1089,13 @@ async def create_meeting(
                     recip.Type = OL_OPTIONAL
 
         appt.Recipients.ResolveAll()
+        if DRAFT_MODE and not confirm_send:
+            appt.Save()
+            return (
+                f"Meeting '{subject}' saved to your calendar but invitations "
+                f"were NOT sent (entry_id={appt.EntryID}). Open it in Outlook "
+                f"and click Send to invite {required_attendees}."
+            )
         appt.Send()
         return (
             f"Meeting '{subject}' created and invitations sent to "
@@ -1086,7 +1105,7 @@ async def create_meeting(
     try:
         return await bridge.call(
             _create, subject, start, end, required_attendees, location, body,
-            optional_attendees, account,
+            optional_attendees, account, confirm_send,
         )
     except Exception as e:
         return f"Error creating meeting: {format_com_error(e)}"

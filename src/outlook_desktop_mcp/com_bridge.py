@@ -30,7 +30,13 @@ class OutlookBridge:
         self._init_error: Exception | None = None
 
     def start(self) -> None:
-        """Start the COM thread. Idempotent - safe to call multiple times."""
+        """Start the COM thread. Idempotent - safe to call multiple times.
+
+        Only waits for the thread itself to come alive - NOT for a
+        connection to Outlook. Connecting to Outlook happens lazily on the
+        first queued call (see _run_with_reconnect), so start() succeeds
+        even if Outlook isn't running yet.
+        """
         if self._thread is not None and self._thread.is_alive():
             return
         # Reset state so restart after stop() works correctly.
@@ -38,6 +44,10 @@ class OutlookBridge:
         self._ready.clear()
         self._alive.clear()
         self._init_error = None
+        # A fresh thread means a fresh COM apartment - any cached Outlook
+        # proxy from a previous thread is invalid, force a reconnect.
+        self._outlook = None
+        self._namespace = None
         # Drain any stale requests left over from the previous lifecycle.
         # Without this, timed-out requests would re-execute on the new thread.
         while True:
@@ -53,28 +63,31 @@ class OutlookBridge:
         if not self._ready.wait(timeout=15):
             if self._init_error:
                 raise self._init_error
-            raise RuntimeError(
-                "Outlook COM thread failed to initialize within 15s. "
-                "Is Outlook Desktop (Classic) running?"
-            )
+            raise RuntimeError("Outlook COM thread failed to start within 15s.")
         if self._init_error:
             raise self._init_error
 
     def _com_thread_main(self) -> None:
-        """Main loop for the COM thread."""
+        """Main loop for the COM thread.
+
+        Does NOT connect to Outlook here. Connecting is lazy - attempted by
+        _run_with_reconnect() on the first queued call, and re-attempted if
+        the connection dies mid-session (e.g. Outlook restarts). This lets
+        the thread - and the MCP server around it - come up even if Outlook
+        isn't running yet.
+        """
         import pythoncom
-        import win32com.client
 
-        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
-        self._alive.set()
         try:
-            self._outlook = win32com.client.Dispatch("Outlook.Application")
-            self._namespace = self._outlook.GetNamespace("MAPI")
-            store_name = self._namespace.DefaultStore.DisplayName
-            user_name = self._namespace.CurrentUser.Name
-            logger.debug("COM thread ready. Store: %s, User: %s", store_name, user_name)
+            pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+        except Exception as e:
+            self._init_error = e
             self._ready.set()
+            return
 
+        self._alive.set()
+        self._ready.set()
+        try:
             while not self._shutdown.is_set():
                 try:
                     func, args, kwargs, result_event, result_holder = (
@@ -83,18 +96,12 @@ class OutlookBridge:
                 except queue.Empty:
                     continue
                 try:
-                    result_holder["value"] = func(
-                        self._outlook, self._namespace, *args, **kwargs
-                    )
+                    result_holder["value"] = self._run_with_reconnect(func, args, kwargs)
                 except Exception as e:
                     result_holder["error"] = e
                     result_holder["tb"] = e.__traceback__
                 finally:
                     result_event.set()
-        except Exception as e:
-            self._init_error = e
-            self._ready.set()
-            logger.error("COM thread init failed: %s", e)
         finally:
             self._alive.clear()
             pythoncom.CoUninitialize()

@@ -251,3 +251,42 @@ def test_run_with_reconnect_does_not_reconnect_on_non_disconnect_error():
             b._run_with_reconnect(raise_value_error, (), {})
     mock_dispatch.assert_not_called()
     assert b._outlook is original_outlook
+
+
+# ---- start() no longer requires Outlook running; call() connects lazily ----
+
+def test_start_succeeds_without_outlook_running():
+    """start() must not eagerly dispatch Outlook.Application."""
+    b = OutlookBridge()
+    with patch("win32com.client.Dispatch", side_effect=RuntimeError("Outlook not running")) as mock_dispatch:
+        b.start()  # must not raise
+    try:
+        assert b._thread.is_alive()
+        mock_dispatch.assert_not_called()
+    finally:
+        b.stop()
+
+
+def test_call_connects_lazily_then_succeeds():
+    b = OutlookBridge()
+    fake_outlook = MagicMock()
+    fake_outlook.GetNamespace.return_value = MagicMock()
+    with patch("win32com.client.Dispatch", return_value=fake_outlook) as mock_dispatch:
+        b.start()
+        try:
+            result = asyncio.run(b.call(lambda o, n: "connected"))
+        finally:
+            b.stop()
+    assert result == "connected"
+    mock_dispatch.assert_called_once()
+
+
+def test_call_raises_clear_error_when_outlook_not_running_at_call_time():
+    b = OutlookBridge()
+    with patch("win32com.client.Dispatch", side_effect=RuntimeError("boom")):
+        b.start()
+        try:
+            with pytest.raises(RuntimeError, match="Outlook Desktop is not running"):
+                asyncio.run(b.call(lambda o, n: "x"))
+        finally:
+            b.stop()

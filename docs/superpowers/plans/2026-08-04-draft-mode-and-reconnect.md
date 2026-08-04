@@ -430,11 +430,17 @@ def test_call_raises_clear_error_when_outlook_not_running_at_call_time():
 
 Run: `uv run --no-sync pytest tests/test_com_bridge.py -k "test_start_succeeds_without_outlook_running or test_call_connects_lazily_then_succeeds or test_call_raises_clear_error_when_outlook_not_running_at_call_time" -v`
 
-Expected: `test_start_succeeds_without_outlook_running` `FAIL`s (current `start()`
-calls `Dispatch` eagerly inside `_com_thread_main` and raises before
-`b.start()` returns). The other two currently `PASS` against the old code by
-coincidence of the old eager-connect design - re-verify after Step 3 that they
-still pass for the *new* reason (lazy connect), not the old one.
+Expected (verified empirically against pre-Task-4 code, corrected from an
+earlier draft of this plan): `test_start_succeeds_without_outlook_running`
+`FAIL`s (current `start()` calls `Dispatch` eagerly inside `_com_thread_main`
+and raises before `b.start()` returns).
+`test_call_raises_clear_error_when_outlook_not_running_at_call_time` also
+`FAIL`s, for the same reason - `b.start()` itself raises before the test ever
+reaches its `pytest.raises` block, since the old code fails at start-time, not
+call-time. Only `test_call_connects_lazily_then_succeeds` `PASS`es against the
+old code, by coincidence of the old eager-connect design (Dispatch happens to
+be mocked to succeed) - re-verify after Step 3 that it still passes for the
+*new* reason (lazy connect on first call), not the old one.
 
 - [ ] **Step 3: Write the implementation**
 

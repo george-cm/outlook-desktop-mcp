@@ -14,8 +14,9 @@ from outlook_desktop_mcp.utils.constants import (
 def com_time_iso(value) -> str:
     """Format a COM datetime (pywin32 PyTime) as ISO 8601 in local time.
 
-    pywin32 labels COM local times as UTC; the wall clock is local, so we
-    read the fields, drop tzinfo, and let astimezone() attach the real
+    pywin32 attaches a fixed tzinfo to COM times (observed: "(UTC+00:00)
+    Dublin, Edinburgh, Lisbon, London") but the wall clock is system-local,
+    so we read the fields, drop tzinfo, and let astimezone() attach the real
     (DST-aware) system-local offset.
     """
     naive = datetime(

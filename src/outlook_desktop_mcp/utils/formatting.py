@@ -1,5 +1,6 @@
 """Helpers for extracting and formatting Outlook item data."""
 import re
+from datetime import datetime
 
 from outlook_desktop_mcp.utils.constants import (
     BUSY_STATUS_NAMES,
@@ -8,6 +9,26 @@ from outlook_desktop_mcp.utils.constants import (
     TASK_STATUS_NAMES,
     IMPORTANCE_NAMES,
 )
+
+
+def com_time_iso(value) -> str:
+    """Format a COM datetime (pywin32 PyTime) as ISO 8601 in local time.
+
+    pywin32 attaches a fixed tzinfo to COM times (observed: "(UTC+00:00)
+    Dublin, Edinburgh, Lisbon, London") but the wall clock is system-local,
+    so we read the fields, drop tzinfo, and let astimezone() attach the real
+    (DST-aware) system-local offset.
+    """
+    naive = datetime(
+        value.year,
+        value.month,
+        value.day,
+        value.hour,
+        value.minute,
+        value.second,
+        getattr(value, "microsecond", 0) or 0,
+    )
+    return naive.astimezone().isoformat()
 
 
 def truncate(text: str, max_length: int = 2000) -> str:
@@ -30,7 +51,7 @@ def format_email_summary(item) -> dict:
         "subject": item.Subject or "(no subject)",
         "sender": getattr(item, "SenderEmailAddress", "unknown"),
         "sender_name": getattr(item, "SenderName", "unknown"),
-        "received_time": item.ReceivedTime.isoformat(),
+        "received_time": com_time_iso(item.ReceivedTime),
         "unread": bool(item.UnRead),
         "has_attachments": att_count > 0,
         "attachment_count": att_count,
@@ -54,8 +75,8 @@ def format_event_summary(item) -> dict:
     return {
         "entry_id": item.EntryID,
         "subject": item.Subject or "(no subject)",
-        "start": item.Start.isoformat(),
-        "end": item.End.isoformat(),
+        "start": com_time_iso(item.Start),
+        "end": com_time_iso(item.End),
         "duration": item.Duration,
         "location": item.Location or "",
         "organizer": item.Organizer or "",
@@ -93,8 +114,8 @@ def format_task_summary(item) -> dict:
         "subject": item.Subject or "(no subject)",
         "status": TASK_STATUS_NAMES.get(item.Status, "unknown"),
         "percent_complete": item.PercentComplete,
-        "due_date": None if due.year == 4501 else due.isoformat(),
-        "start_date": None if start.year == 4501 else start.isoformat(),
+        "due_date": None if due.year == 4501 else com_time_iso(due),
+        "start_date": None if start.year == 4501 else com_time_iso(start),
         "importance": IMPORTANCE_NAMES.get(item.Importance, "normal"),
         "complete": bool(item.Complete),
         "categories": item.Categories or "",
@@ -109,6 +130,6 @@ def format_task_full(item, body_max_length: int = 5000) -> dict:
     result["reminder_set"] = bool(item.ReminderSet)
     completed = item.DateCompleted
     result["date_completed"] = (
-        completed.isoformat() if item.Complete else None
+        com_time_iso(completed) if item.Complete else None
     )
     return result

@@ -44,6 +44,7 @@ from outlook_desktop_mcp.utils.constants import (
     OL_CLASS_TASK,
 )
 from outlook_desktop_mcp.utils.formatting import (
+    com_time_iso,
     format_email_summary,
     format_email_full,
     format_event_summary,
@@ -822,8 +823,16 @@ async def search_emails(
 # --- Helper: parse ISO date string ---
 
 def _parse_date(date_str: str) -> datetime:
-    """Parse ISO 8601 date string like '2026-02-25 14:00' or '2026-02-25T14:00:00'."""
-    return datetime.fromisoformat(date_str)
+    """Parse ISO 8601 date string like '2026-02-25 14:00' or '2026-02-25T14:00:00'.
+
+    An aware input ("...Z" / "+00:00") is converted to local wall-clock and
+    made naive, because Outlook COM date properties take local time.
+    Naive input is already local and passes through unchanged.
+    """
+    dt = datetime.fromisoformat(date_str)
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt
 
 
 # =====================================================================
@@ -992,8 +1001,8 @@ async def create_event(
         return json.dumps({
             "status": "created",
             "subject": appt.Subject,
-            "start": str(appt.Start),
-            "end": str(appt.End),
+            "start": com_time_iso(appt.Start),
+            "end": com_time_iso(appt.End),
             "entry_id": appt.EntryID,
         }, indent=2, default=str)
 
@@ -1162,8 +1171,8 @@ async def update_event(
         return json.dumps({
             "status": "updated",
             "subject": item.Subject,
-            "start": str(item.Start),
-            "end": str(item.End),
+            "start": com_time_iso(item.Start),
+            "end": com_time_iso(item.End),
             "location": item.Location or "",
             "entry_id": item.EntryID,
         }, indent=2, default=str)
@@ -1457,7 +1466,7 @@ async def create_task(
             "status": "created",
             "subject": task.Subject,
             "entry_id": task.EntryID,
-            "due_date": str(task.DueDate) if due_date else None,
+            "due_date": com_time_iso(task.DueDate) if due_date else None,
         }, indent=2, default=str)
 
     try:

@@ -2,7 +2,7 @@
 Unit tests for utils/formatting - no Outlook or COM required.
 COM objects are simulated with MagicMock.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
 import pytest
 
@@ -13,12 +13,10 @@ from outlook_desktop_mcp.utils.formatting import (
 )
 
 
-def _pyTime(dt: datetime) -> MagicMock:
-    """Simulate a COM PyTime object that has .isoformat() and .year."""
-    m = MagicMock(spec=[])
-    m.isoformat = lambda: dt.isoformat()
-    m.year = dt.year
-    return m
+def _pyTime(dt: datetime) -> datetime:
+    """Simulate a pywin32 COM datetime: real datetime carrying LOCAL wall-clock
+    fields but labelled tzinfo=UTC (the COM mislabel we compensate for)."""
+    return dt.replace(tzinfo=timezone.utc)
 
 
 def _no_date() -> MagicMock:
@@ -80,12 +78,12 @@ class TestFormatEmailSummary:
     def test_received_time_is_iso8601(self):
         dt = datetime(2026, 3, 22, 14, 0, 0)
         result = format_email_summary(_mock_email(dt))
-        assert result["received_time"] == "2026-03-22T14:00:00"
+        assert result["received_time"] == dt.astimezone().isoformat()
 
     def test_received_time_parseable(self):
         dt = datetime(2026, 1, 5, 9, 30, 0)
         result = format_email_summary(_mock_email(dt))
-        assert datetime.fromisoformat(result["received_time"]) == dt
+        assert datetime.fromisoformat(result["received_time"]) == dt.astimezone()
 
     def test_attachment_count_cached(self):
         """Attachments.Count must be accessed once (cached), not twice."""
@@ -115,18 +113,18 @@ class TestFormatEventSummary:
         start = datetime(2026, 4, 1, 10, 0, 0)
         end = datetime(2026, 4, 1, 11, 0, 0)
         result = format_event_summary(_mock_event(start, end))
-        assert result["start"] == "2026-04-01T10:00:00"
+        assert result["start"] == start.astimezone().isoformat()
 
     def test_end_is_iso8601(self):
         start = datetime(2026, 4, 1, 10, 0, 0)
         end = datetime(2026, 4, 1, 11, 30, 0)
         result = format_event_summary(_mock_event(start, end))
-        assert result["end"] == "2026-04-01T11:30:00"
+        assert result["end"] == end.astimezone().isoformat()
 
     def test_start_parseable(self):
         start = datetime(2026, 6, 15, 9, 0, 0)
         result = format_event_summary(_mock_event(start, start))
-        assert datetime.fromisoformat(result["start"]) == start
+        assert datetime.fromisoformat(result["start"]) == start.astimezone()
 
 
 # ---- task ----
@@ -141,8 +139,9 @@ class TestFormatTaskSummary:
         assert result["start_date"] is None
 
     def test_due_date_iso8601_when_set(self):
+        due = datetime(2026, 6, 1)
         result = format_task_summary(_mock_task(due_year=2026))
-        assert result["due_date"] == "2026-06-01T00:00:00"
+        assert result["due_date"] == due.astimezone().isoformat()
         datetime.fromisoformat(result["due_date"])
 
     def test_sentinel_check_uses_year_not_string(self):
@@ -171,3 +170,39 @@ class TestFormatTaskSummary:
         assert due_mock.call_count == 1, (
             f"DueDate accessed {due_mock.call_count} times - expected 1 (cached)"
         )
+
+
+# ---- pywin32 tz mislabel compensation ----
+
+class TestComTimeLocalTz:
+    """pywin32 labels COM local times as UTC; output must carry the real local offset."""
+
+    def test_event_start_carries_local_offset(self):
+        start = datetime(2026, 11, 6, 12, 30)
+        end = datetime(2026, 11, 6, 13, 30)
+        result = format_event_summary(_mock_event(start, end))
+        assert result["start"] == start.astimezone().isoformat()
+        parsed = datetime.fromisoformat(result["start"])
+        assert parsed.utcoffset() == start.astimezone().utcoffset()
+        assert parsed.utcoffset() != timezone.utc.utcoffset(parsed)
+
+    def test_email_received_time_carries_local_offset(self):
+        dt = datetime(2026, 11, 6, 12, 30)
+        result = format_email_summary(_mock_email(dt))
+        parsed = datetime.fromisoformat(result["received_time"])
+        assert parsed.utcoffset() == dt.astimezone().utcoffset()
+
+    def test_task_due_date_carries_local_offset(self):
+        due = datetime(2026, 11, 6)
+        item = _mock_task(due_year=2026)
+        item.DueDate = _pyTime(due)
+        result = format_task_summary(item)
+        parsed = datetime.fromisoformat(result["due_date"])
+        assert parsed.utcoffset() == due.astimezone().utcoffset()
+
+    def test_summer_date_uses_dst_offset(self):
+        """2026-07-01 is summer time; naive->astimezone must pick the DST offset."""
+        dt = datetime(2026, 7, 1, 12, 0)
+        result = format_event_summary(_mock_event(dt, dt))
+        parsed = datetime.fromisoformat(result["start"])
+        assert parsed.utcoffset() == dt.astimezone().utcoffset()
